@@ -76,4 +76,4 @@ def convertToJpeg(filepath):
 
 
 if __name__ == "__main__":
-    convertToJpeg(r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\Cell detection\data\_1_MMStack_A1_1.ome.tif")
+    convertToJpeg("../data/_1_MMStack_A1_1.ome.tif")
