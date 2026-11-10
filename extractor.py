@@ -2,7 +2,7 @@ import os
 import cv2
 import pandas as pd
 
-def extract_tracking_with_drops(mdf_path, image_folder, output_folder, track_to_keep=1, window_size=100):
+def extract_tracking_with_drops(mdf_path, image_folder, output_folder, track_to_keep=1, window_size=100, modified = False):
     """
     On traite un fichier .mdf généré par MTrackJ et on coupe les images autour des coordonnées dans la BDD
     """
@@ -56,12 +56,15 @@ def extract_tracking_with_drops(mdf_path, image_folder, output_folder, track_to_
     half_window = window_size // 2
 
     for index, row in df_filtered.iterrows():
-        frame_idx = int(row['Frame_ID'])
+        frame_idx = int(row['T'])
         
         center_x = int(round(row['X']))
         center_y = int(round(row['Y']))
 
-        img_filename = f"page_{frame_idx}.jpeg" 
+        if modified : 
+            img_filename = f"page_{frame_idx}_modified.jpeg"  
+        else : 
+            img_filename = f"page_{frame_idx}.jpeg" 
         img_path = os.path.join(image_folder, img_filename)
 
         if not os.path.exists(img_path):
@@ -82,19 +85,23 @@ def extract_tracking_with_drops(mdf_path, image_folder, output_folder, track_to_
 
         patch = img[y_min:y_max, x_min:x_max]
 
-        out_filename = f"track_{track_to_keep}_frame_{frame_idx}.png"
+        if modified : 
+            out_filename = f"modified_track_{track_to_keep}_frame_{frame_idx}.png"
+        else : 
+            out_filename = f"track_{track_to_keep}_frame_{frame_idx}.png"
         out_path = os.path.join(output_folder, out_filename)
         cv2.imwrite(out_path, patch)
 
 if __name__ == "__main__":
     MDF_PATH = "../data/Analysis and stats/_1_MMStack_A1_1.ome.tif.mdf"
     IMAGE_FOLDER = "../data/_1_MMStack_A1_1"
-    OUTPUT_FOLDER = "../data/tracked_crops"    
+    OUTPUT_FOLDER = "../data/tracked_crops_modified"    
     
     extract_tracking_with_drops(
         mdf_path=MDF_PATH, 
         image_folder=IMAGE_FOLDER, 
         output_folder=OUTPUT_FOLDER, 
-        track_to_keep=6,
-        window_size=200
+        track_to_keep=2,
+        window_size=150, 
+        modified = True
     )
