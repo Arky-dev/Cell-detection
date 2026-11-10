@@ -1,0 +1,10 @@
+Les images sont trop grandes on doit les convertir en jpeg pour travailler avec. C'estok avec cv2
+
+Otsu pas possible car arriere plan trop de variations dans la lumiere
+Fenetre glissante pas pratique car il peut ny avoir aucune cellule dans la Fenetre
+
+Filtres de convolution : 
+ - laplacien ne voit rien
+ - les sobels marchent bien.
+
+On essaye avec sobelx
