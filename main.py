@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import os
 import tifffile as tiff
+from scipy.ndimage import gaussian_filter
 
 
 def show_image(img, title):
@@ -71,10 +72,18 @@ def modify_image(path_in, path_out, N = 4) :
 
     image = np.zeros_like(image)
     image[mask] = 255
+
+    #les coins
     image[:largeur, :largeur] = vote1[:largeur, :largeur]
     image[:largeur, -largeur:] = vote1[:largeur, -largeur:]
     image[-largeur:, :largeur] = vote1[-largeur:, :largeur]
     image[-largeur:, -largeur:] = vote1[-largeur:, -largeur:]
+
+
+    image = gaussian_filter(image, sigma = 4)
+    ret, image = cv2.threshold(
+                        image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
 
     cv2.imwrite(path_out, image)
 
@@ -123,4 +132,4 @@ def convertToJpeg(filepath, outfolder = None, modify = True):
 
 if __name__ == "__main__":
     #modify_image("../data/_1_MMStack_A1_1/page_1.jpeg", "../data/modified_1_MMStack_A1_1/page_1.jpeg")
-    convertToJpeg("../data/_1_MMStack_A1_1.ome.tif", "../data/modified_1_MMStack_A1_1", True)
+    convertToJpeg("../data/_1_MMStack_A4_1.ome.tif", "../data/modified_1_MMStack_A4_1", True)
