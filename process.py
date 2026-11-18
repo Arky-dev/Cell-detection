@@ -62,6 +62,74 @@ def binarize(frame, N=8):
     return frame
 
 
+def binarize_glissante(image, N=4):
+
+    L = len(image)
+    vote1 = np.zeros_like(image)
+    vote2 = np.zeros_like(image)
+    vote3 = np.zeros_like(image)
+    vote4 = np.zeros_like(image)
+
+    for i in range(N):
+        for j in range(N):
+                subimg = image[i*L//N:(i+1)*L//N, j*L//N:(j+1)*L//N]
+                ret, otsu_thresh = cv2.threshold(
+                    subimg, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                if np.corrcoef(otsu_thresh[:-1,:].flatten(), otsu_thresh[1:,:].flatten())[0, 1] >= 0.5:
+                    vote1[i*L//N:(i+1)*L//N, j*L//N:(j+1)*L//N] = otsu_thresh
+
+    for i in range(N - 1):
+        for j in range(N - 1):
+            subimg = image[L//(2*N) + i*L//N:L//(2*N) +(i+1)*L//N, L//(2*N) + j*L//N:L//(2*N) +(j+1)*L//N]
+            ret, otsu_thresh = cv2.threshold(
+                subimg, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            if np.corrcoef(otsu_thresh[:-1,:].flatten(), otsu_thresh[1:,:].flatten())[0, 1] >= 0.5:
+                vote2[L//(2*N) + i*L//N:L//(2*N)+(i+1)*L//N, L//(2*N) + j*L//N:L//(2*N)+(j+1)*L//N] = otsu_thresh
+
+    for i in range(N):
+        for j in range(N - 1):
+            subimg = image[ i*L//N: (i+1)*L//N, L//(2*N) + j*L//N:L//(2*N) +(j+1)*L//N]
+            ret, otsu_thresh = cv2.threshold(
+                subimg, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            if np.corrcoef(otsu_thresh[:-1,:].flatten(), otsu_thresh[1:,:].flatten())[0, 1] >= 0.5:
+                vote3[ i*L//N:(i+1)*L//N, L//(2*N) + j*L//N:L//(2*N)+(j+1)*L//N] = otsu_thresh
+
+    for i in range(N - 1):
+        for j in range(N):
+            subimg = image[L//(2*N) + i*L//N:L//(2*N) +(i+1)*L//N,  j*L//N:(j+1)*L//N]
+            ret, otsu_thresh = cv2.threshold(
+                subimg, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            if np.corrcoef(otsu_thresh[:-1,:].flatten(), otsu_thresh[1:,:].flatten())[0, 1] >= 0.5:
+                vote4[L//(2*N) + i*L//N:L//(2*N)+(i+1)*L//N, j*L//N:(j+1)*L//N] = otsu_thresh
+
+    
+    votes = ((vote1 == 255).astype(int) +
+            (vote2 == 255).astype(int) +
+            (vote3 == 255).astype(int) +
+            (vote4 == 255).astype(int))
+
+    largeur = L // (2*N)
+
+    mask_bord = np.zeros_like(votes, dtype=bool)
+    mask_bord[:, :largeur] = True
+    mask_bord[:, -largeur:] = True
+    mask_bord[:largeur, :] = True
+    mask_bord[-largeur:, :] = True
+
+    mask = np.where(mask_bord, votes >= 2, votes >= 3)
+
+    image = np.zeros_like(image)
+    image[mask] = 255
+
+    #les coins
+    image[:largeur, :largeur] = vote1[:largeur, :largeur]
+    image[:largeur, -largeur:] = vote1[:largeur, -largeur:]
+    image[-largeur:, :largeur] = vote1[-largeur:, :largeur]
+    image[-largeur:, -largeur:] = vote1[-largeur:, -largeur:]
+
+    return image
+
+
 def detect_cells(frame, background, min_area=400, max_area=12000, min_circularity=0.45, etapes=False):
 
     diff = np.abs(frame.astype(np.float32) - background).astype(np.uint8)
@@ -71,7 +139,7 @@ def detect_cells(frame, background, min_area=400, max_area=12000, min_circularit
     mag = cv2.magnitude(sobelx, sobely)
     grad_norm = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-    binary = binarize(grad_norm)
+    binary = binarize_glissante(grad_norm)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
     filled = binary_fill_holes(closed > 0).astype(np.uint8) * 255
@@ -198,7 +266,6 @@ def track_cells(detections_per_frame, max_dist=35.0, max_missed=2, min_track_len
     return [t for t in all_tracks if len(t["positions"]) >= min_track_len]
 
 
-
 def save_tracking_video(stack, tracks, output_path="tracked_cells.mp4", fps=15, tail_length=25):
     """Render an MP4 video showing cell centroids, IDs, and trailing trajectories."""
     n_frames, h, w = stack.shape
@@ -273,7 +340,7 @@ if __name__ == "__main__":
     )
     visualize_detections(stack[0], dets)
 
-    # visualize_debug_stages(stack[0], dets, stages)
+    visualize_debug_stages(stack[0], dets, stages)
 
     all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
     tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
