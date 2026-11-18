@@ -56,11 +56,12 @@ def extract_tracking_with_drops(mdf_path, image_folder, output_folder, track_to_
     half_window = window_size // 2
 
     for index, row in df_filtered.iterrows():
-        frame_idx = int(row['Frame_ID'])
+        frame_idx = int(row['T'])
+        print(row)
         
         center_x = int(round(row['X']))
         center_y = int(round(row['Y']))
-
+        
         img_filename = f"page_{frame_idx}.jpeg" 
         img_path = os.path.join(image_folder, img_filename)
 
@@ -95,6 +96,6 @@ if __name__ == "__main__":
         mdf_path=MDF_PATH, 
         image_folder=IMAGE_FOLDER, 
         output_folder=OUTPUT_FOLDER, 
-        track_to_keep=1,
+        track_to_keep=3,
         window_size=100
     )

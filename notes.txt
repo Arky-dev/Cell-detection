@@ -8,3 +8,7 @@ Filtres de convolution :
  - les sobels marchent bien.
 
 On essaye avec sobelx
+
+
+
+Wasserstein? 
