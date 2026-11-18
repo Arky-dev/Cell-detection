@@ -88,11 +88,11 @@ def detect_fusion_division(matches, n, m):
     return events
 
 if __name__ == "__main__":
-    tif_path = "../data/_1_MMStack_A1_1.ome.tif"
+    tif_path = r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\_1_MMStack_A1_1.ome.tif"
     stack = load_stack(tif_path, channel=0, n_channels=1)
     background = np.median(stack, axis=0).astype(np.float32)
     all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
-    with open("all_detection.pkl", "wb") as fichier:
+    with open(r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\all_detection.pkl", "wb+") as fichier:
         pickle.dump(all_detections, fichier, protocol=pickle.HIGHEST_PROTOCOL)
     cells_t = [cell["centroid"] for cell in all_detections[0]]
     print(cells_t)
