@@ -2,6 +2,8 @@
 import numpy as np
 import ot
 from scipy.spatial.distance import cdist
+from process import * 
+import pickle
 
 # Avec les cellules données comme ça :  [x, y, area]
 
@@ -13,7 +15,7 @@ def trajectoire_transport_optimal(cells_t, cells_next,
                 reg_m=1.0,
                 min_fraction=0.15):
 
-    pos_t = cells_t[:, :2]
+    pos_t = [cell["centroid"] for cell in cells_t]
     pos_next = cells_next[:, :2]
     area_t = cells_t[:, 2]
     area_next = cells_next[:, 2]
@@ -84,4 +86,18 @@ def detect_fusion_division(matches, n, m):
             })
 
     return events
+
+if __name__ == "__main__":
+    tif_path = "../data/_1_MMStack_A1_1.ome.tif"
+    stack = load_stack(tif_path, channel=0, n_channels=1)
+    background = np.median(stack, axis=0).astype(np.float32)
+    all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
+    with open("all_detection.pkl", "wb") as fichier:
+        pickle.dump(all_detections, fichier, protocol=pickle.HIGHEST_PROTOCOL)
+    cells_t = [cell["centroid"] for cell in all_detections[0]]
+    print(cells_t)
+
+def full_trajectory(all_detections) : 
+    trajectories = []
+    current_cells = all_detections[0]
 

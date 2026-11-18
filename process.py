@@ -258,7 +258,7 @@ def save_tracking_video(stack, tracks, output_path="tracked_cells.mp4", fps=15, 
 
 
 if __name__ == "__main__":
-    tif_path = r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\_1_MMStack_A1_1.ome.tif"
+    tif_path = "../data/_1_MMStack_A1_1.ome.tif"
 
     stack = load_stack(tif_path, channel=0, n_channels=1)
     background = np.median(stack, axis=0).astype(np.float32)
@@ -276,6 +276,7 @@ if __name__ == "__main__":
     # visualize_debug_stages(stack[0], dets, stages)
 
     all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
-    tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
-    tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
-    save_tracking_video(stack, tracks, output_path=r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\tracked.mp4", fps=5, tail_length=25)
+    
+    #tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
+    #tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
+    #save_tracking_video(stack, tracks, output_path="../data/tracked.mp4", fps=5, tail_length=25)
