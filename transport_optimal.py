@@ -4,21 +4,24 @@ import ot
 from scipy.spatial.distance import cdist
 from process import * 
 import pickle
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+import matplotlib.cm as cm
 
 # Avec les cellules données comme ça :  [x, y, area]
 
 def trajectoire_transport_optimal(cells_t, cells_next,
-                max_distance=30,
+                max_distance=50,
                 alpha=0.8,
                 beta=0.2,
                 reg=0.01,
                 reg_m=1.0,
                 min_fraction=0.15):
 
-    pos_t = [cell["centroid"] for cell in cells_t]
-    pos_next = cells_next[:, :2]
-    area_t = cells_t[:, 2]
-    area_next = cells_next[:, 2]
+    pos_t = np.array([cell["centroid"] for cell in cells_t])
+    pos_next = np.array([cell["centroid"] for cell in cells_next])
+    area_t = np.array([cell["area"] for cell in cells_t])
+    area_next = np.array([cell["area"] for cell in cells_next])
 
     n, m = len(cells_t), len(cells_next)
     if n == 0 or m == 0:
@@ -87,17 +90,263 @@ def detect_fusion_division(matches, n, m):
 
     return events
 
-if __name__ == "__main__":
-    tif_path = r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\_1_MMStack_A1_1.ome.tif"
-    stack = load_stack(tif_path, channel=0, n_channels=1)
-    background = np.median(stack, axis=0).astype(np.float32)
-    all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
-    with open(r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\all_detection.pkl", "wb+") as fichier:
-        pickle.dump(all_detections, fichier, protocol=pickle.HIGHEST_PROTOCOL)
-    cells_t = [cell["centroid"] for cell in all_detections[0]]
-    print(cells_t)
 
-def full_trajectory(all_detections) : 
+
+def visualize_matching(frame_t, frame_next, cells_t, cells_next, matches):
+
+    fig, ax = plt.subplots(figsize=(16, 8))
+
+    h, w = frame_t.shape[:2]
+    ax.imshow(frame_t, cmap="gray", extent=[0, w, h, 0])
+    ax.imshow(frame_next, cmap="gray", extent=[w, 2*w, h, 0])
+
+    ax.axvline(w, color="white", linewidth=2)
+    ax.text(w/2, -10, "Frame 0", ha="center")
+    ax.text(1.5*w, -10, "Frame 1", ha="center")
+
+    colors = plt.cm.tab20(
+        np.linspace(0, 1, max(len(matches), 1))
+    )
+
+    matched_t = set()
+    matched_next = set()
+
+    for k, (i, j) in enumerate(matches):
+
+        color = colors[k]
+        x1, y1 = cells_t[i]["centroid"]
+        x2, y2 = cells_next[j]["centroid"]
+        # Cellules sur les deux images
+        ax.add_patch(Circle((x1, y1), 8, fill=False,
+                            color=color, linewidth=2))
+
+        ax.add_patch(Circle((x2+w, y2), 8, fill=False,
+                            color=color, linewidth=2))
+
+        # Trait reliant les deux cellules
+        ax.plot([x1, x2+w], [y1, y2],
+                color=color, linewidth=1.5, alpha=0.8)
+
+        matched_t.add(i)
+        matched_next.add(j)
+
+    # Cellules non matchées
+    for i, cell in enumerate(cells_t):
+        if i not in matched_t:
+            x, y = cell["centroid"]
+            ax.plot(x, y, "o", color="red", markersize=4)
+
+    for j, cell in enumerate(cells_next):
+        if j not in matched_next:
+            x, y = cell["centroid"]
+            ax.plot(x+w, y, "o", color="red", markersize=4)
+
+    ax.set_xlim(0, 2*w)
+    ax.set_ylim(h, 0)
+    ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+def full_trajectory(all_detections):
+
     trajectories = []
-    current_cells = all_detections[0]
+    next_id = 0
+
+    # Initialisation de la première frame
+    cell_to_trajectory = {}
+
+    for i, cell in enumerate(all_detections[0]):
+
+        traj = {
+            "id": next_id,
+            "parent_id": None,
+            "positions": [cell["centroid"]],
+            "frames": [0],
+            "cells": [(0, i)]
+        }
+
+        trajectories.append(traj)
+        cell_to_trajectory[i] = traj
+        next_id += 1
+
+    # Parcours des frames
+    for t in range(len(all_detections) - 1):
+
+        print("Frame", t + 1)
+
+        cells_t = all_detections[t]
+        cells_next = all_detections[t + 1]
+
+        matches, plan = trajectoire_transport_optimal(
+            cells_t, cells_next
+        )
+
+        # Associations parent -> enfants et enfant -> parents
+        children = {i: [] for i in range(len(cells_t))}
+        parents = {j: [] for j in range(len(cells_next))}
+
+        for i, j in matches:
+            children[i].append(j)
+            parents[j].append(i)
+
+        # Pour chaque enfant, choisir son meilleur parent
+        best_parent = {}
+
+        for j, parents_j in parents.items():
+
+            if parents_j:
+                best_parent[j] = max(
+                    parents_j,
+                    key=lambda i: plan[i, j]
+                )
+
+        # Pour chaque parent, choisir son meilleur enfant
+        # parmi ceux qui l'ont choisi comme meilleur parent
+        best_child = {}
+
+        for i, children_i in children.items():
+
+            selected_children = [
+                j for j in children_i
+                if best_parent.get(j) == i
+            ]
+
+            if selected_children:
+                best_child[i] = max(
+                    selected_children,
+                    key=lambda j: plan[i, j]
+                )
+
+        # Construire les trajectoires de la frame suivante
+        next_cell_to_trajectory = {}
+
+        for j, cell in enumerate(cells_next):
+
+            if j in best_parent:
+
+                i = best_parent[j]
+
+                if best_child.get(i) == j:
+                    # Continuité de trajectoire
+                    traj = cell_to_trajectory[i]
+
+                    traj["positions"].append(cell["centroid"])
+                    traj["frames"].append(t + 1)
+                    traj["cells"].append((t + 1, j))
+
+                else:
+                    # Division ou association secondaire :
+                    # nouvelle trajectoire
+                    parent_traj = cell_to_trajectory[i]
+
+                    traj = {
+                        "id": next_id,
+                        "parent_id": parent_traj["id"],
+                        "positions": [cell["centroid"]],
+                        "frames": [t + 1],
+                        "cells": [(t + 1, j)]
+                    }
+
+                    trajectories.append(traj)
+                    next_id += 1
+
+            else:
+                # Cellule sans parent détecté
+                traj = {
+                    "id": next_id,
+                    "parent_id": None,
+                    "positions": [cell["centroid"]],
+                    "frames": [t + 1],
+                    "cells": [(t + 1, j)]
+                }
+
+                trajectories.append(traj)
+                next_id += 1
+
+            next_cell_to_trajectory[j] = traj
+
+        cell_to_trajectory = next_cell_to_trajectory
+
+    return trajectories
+
+
+def visualize_trajectories(frame, trajectories, min_length=5):
+
+    fig, ax = plt.subplots(figsize=(12, 12))
+    ax.imshow(frame, cmap="gray")
+
+    # Filtrer les trajectoires
+    trajectories = [
+        traj for traj in trajectories
+        if len(traj["frames"]) > min_length and traj["frames"][0] == 0
+    ]
+
+    colors = plt.cm.nipy_spectral(
+        np.linspace(0, 1, len(trajectories))
+    )
+
+    for traj, color in zip(trajectories, colors):
+
+        positions = np.array(traj["positions"])
+
+        ax.plot(
+            positions[:, 0],
+            positions[:, 1],
+            "-o",
+            color=color,
+            markersize=2,
+            linewidth=1.2,
+            alpha=0.8
+        )
+
+        # Identifiant au début de la trajectoire
+        ax.text(
+            positions[0, 0],
+            positions[0, 1],
+            str(traj["id"]),
+            color=color,
+            fontsize=7
+        )
+
+    ax.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == "__main__":
+    tif_path = "../data/_1_MMStack_A1_1.ome.tif"
+    stack = load_stack(tif_path, channel=0, n_channels=1)
+    with open("all_detection.pkl", "rb") as f:
+        all_detections = pickle.load(f)
+    cells_t = all_detections[14]
+    cells_next = all_detections[15]
+    matches, plan = trajectoire_transport_optimal(cells_t, cells_next)
+    visualize_matching(
+        stack[14],
+        stack[15],
+        cells_t,
+        cells_next,
+        matches
+    )
+    
+
+"""
+if __name__ == "__main__":
+    tif_path = "../data/_1_MMStack_A1_1.ome.tif"
+    stack = load_stack(tif_path, channel=0, n_channels=1)
+    with open("all_detection.pkl", "rb") as f:
+        all_detections = pickle.load(f)
+    trajectories = full_trajectory(all_detections)
+    print( [
+            traj for traj in trajectories
+            if len(traj["frames"]) > 5 and traj["frames"][0] == 0
+        ])
+    visualize_trajectories(stack[0], trajectories, 5)
+
+ """   
+
+
+
 
