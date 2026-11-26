@@ -11,6 +11,9 @@ On essaye avec sobelx
 
 
 
-Wasserstein? 
+Wasserstein? Laplacian of Gaussians
 
 Métriques de rondeur : aire/perimetre ? remplissage enveloppe convexe ? Remplissage du bord de l'enveloppe ?
+
+Sobel vs just background substraction ?
+

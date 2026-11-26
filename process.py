@@ -62,7 +62,7 @@ def binarize(frame, N=8):
     return frame
 
 
-def binarize_glissante(image, N=4):
+def binarize_glissante(image, N=8):
 
     L = len(image)
     vote1 = np.zeros_like(image)
@@ -130,9 +130,91 @@ def binarize_glissante(image, N=4):
     return image
 
 
-def detect_cells(frame, background, min_area=400, max_area=12000, min_circularity=0.45, etapes=False):
+
+def hull_contact_and_circularity(
+    contour: np.ndarray, touch_tol: float = 2.0
+) -> tuple[float, float]:
+    
+    pts = contour.reshape(-1, 2).astype(np.float32)
+    if len(pts) < 5:
+        return 0.0, 0.0
+
+    # 1. Compute convex hull
+    hull = cv2.convexHull(pts)
+    hull_pts = hull.reshape(-1, 2)
+
+    hull_area = cv2.contourArea(hull)
+    hull_perim = cv2.arcLength(hull, closed=True)
+    if hull_perim == 0 or hull_area == 0:
+        return 0.0, 0.0
+
+    # 2. Convex hull circularity
+    hull_circularity = float((4.0 * np.pi * hull_area) / (hull_perim**2))
+    hull_circularity = min(hull_circularity, 1.0)  # clamp floating-point overshoot
+
+    # 3. Densify the convex hull edges (~1 sample point per pixel)
+    closed_hull = np.vstack([hull_pts, hull_pts[0]])
+    diffs = np.diff(closed_hull, axis=0)
+    seg_lengths = np.hypot(diffs[:, 0], diffs[:, 1])
+    cum_len = np.concatenate([[0.0], np.cumsum(seg_lengths)])
+
+    num_samples = max(int(round(hull_perim)), 20)
+    even_s = np.linspace(0, hull_perim, num_samples, endpoint=False)
+
+    hx = np.interp(even_s, cum_len, closed_hull[:, 0])
+    hy = np.interp(even_s, cum_len, closed_hull[:, 1])
+    hull_samples = np.column_stack([hx, hy])  # (M, 2)
+
+    # 4. Also densify the original contour (crucial because CHAIN_APPROX_SIMPLE
+    # compresses straight edges into just two distant endpoints)
+    closed_cnt = np.vstack([pts, pts[0]])
+    c_diffs = np.diff(closed_cnt, axis=0)
+    c_lengths = np.hypot(c_diffs[:, 0], c_diffs[:, 1])
+    c_cum = np.concatenate([[0.0], np.cumsum(c_lengths)])
+    cnt_perim = c_cum[-1]
+
+    cnt_samples_n = max(int(round(cnt_perim)), 20)
+    c_even_s = np.linspace(0, cnt_perim, cnt_samples_n, endpoint=False)
+    cx = np.interp(c_even_s, c_cum, closed_cnt[:, 0])
+    cy = np.interp(c_even_s, c_cum, closed_cnt[:, 1])
+    cnt_samples = np.column_stack([cx, cy])  # (K, 2)
+
+    # 5. Nearest-neighbor distance from each hull sample to the contour
+    # (Chunked to keep memory flat even on huge contours)
+    touching_count = 0
+    chunk_size = 512
+    tol_sq = touch_tol**2
+
+    for i in range(0, len(hull_samples), chunk_size):
+        chunk = hull_samples[i : i + chunk_size]  # (C, 2)
+        # Squared Euclidean distance matrix: (C, 1, 2) - (1, K, 2)
+        d2 = np.sum((chunk[:, None, :] - cnt_samples[None, :, :]) ** 2, axis=-1)
+        min_d2 = np.min(d2, axis=1)
+        touching_count += int(np.sum(min_d2 <= tol_sq))
+
+    hull_contact = touching_count / len(hull_samples)
+    return float(hull_contact), hull_circularity
+
+
+# --- Example Filtering ---
+# valid_contours = []
+# for cnt in contours:
+#     if cv2.contourArea(cnt) < 50:
+#         continue
+
+#     contact, hull_circ = hull_contact_and_circularity(cnt, touch_tol=2.0)
+
+#     # Discs:      contact ~ 0.98, hull_circ ~ 0.90
+#     # Horseshoes: contact ~ 0.80, hull_circ ~ 0.85
+#     # Ragged:     contact ~ 0.20, hull_circ ~ 0.85
+#     if contact > 0.65 and hull_circ > 0.70:
+#         valid_contours.append(cnt)
+
+
+def detect_cells(frame, background, min_area=900, max_area=12000, min_circularity=0.45, etapes=False):
 
     diff = np.abs(frame.astype(np.float32) - background).astype(np.uint8)
+    diff = frame
 
     sobelx = cv2.Sobel(diff, cv2.CV_64F, 1, 0, ksize=3)
     sobely = cv2.Sobel(diff, cv2.CV_64F, 0, 1, ksize=3)
@@ -152,8 +234,8 @@ def detect_cells(frame, background, min_area=400, max_area=12000, min_circularit
         if (min_area <= area <= max_area):
             perimeter = cv2.arcLength(cnt, True)
             if perimeter != 0:
-                circularity = 4 * np.pi * area / (perimeter ** 2)
-                if circularity >= min_circularity:
+                contact, hull_circ = hull_contact_and_circularity(cnt, touch_tol=2.0)
+                if contact >= 0.6 and hull_circ >= 0.7:
                     M = cv2.moments(cnt)
                     if M["m00"] == 0:
                         continue
@@ -325,7 +407,7 @@ def save_tracking_video(stack, tracks, output_path="tracked_cells.mp4", fps=15, 
 
 
 if __name__ == "__main__":
-    tif_path = "../data/_1_MMStack_A1_1.ome.tif"
+    tif_path = r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\_1_MMStack_A2_1.ome.tif"
 
     stack = load_stack(tif_path, channel=0, n_channels=1)
     background = np.median(stack, axis=0).astype(np.float32)
@@ -333,7 +415,7 @@ if __name__ == "__main__":
     dets, stages = detect_cells(
         stack[0],
         background,
-        min_area=400,
+        min_area=900,
         max_area=12000,
         min_circularity=0.45,
         etapes=True,
@@ -342,8 +424,8 @@ if __name__ == "__main__":
 
     visualize_debug_stages(stack[0], dets, stages)
 
-    all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
+    # all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
     
-    #tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
-    #tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
-    #save_tracking_video(stack, tracks, output_path="../data/tracked.mp4", fps=5, tail_length=25)
+    # tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
+    # tracks = track_cells(all_detections, max_dist=35.0, max_missed=2, min_track_len=5)
+    # save_tracking_video(stack, tracks, output_path=r"C:\Users\paula\Documents\[1] School\[0] X\[3] 3A\Computer Vision\data\tracked.mp4", fps=5, tail_length=144)
