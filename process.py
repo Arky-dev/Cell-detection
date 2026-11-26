@@ -331,16 +331,16 @@ if __name__ == "__main__":
     background = np.median(stack, axis=0).astype(np.float32)
 
     dets, stages = detect_cells(
-        stack[0],
+        stack[41],
         background,
         min_area=400,
         max_area=12000,
         min_circularity=0.45,
         etapes=True,
     )
-    visualize_detections(stack[0], dets)
+    visualize_detections(stack[41], dets)
 
-    visualize_debug_stages(stack[0], dets, stages)
+    visualize_debug_stages(stack[41], dets, stages)
 
     all_detections = [detect_cells(frame, background) for frame in tqdm.tqdm(stack)]
     
